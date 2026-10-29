@@ -1,0 +1,12 @@
+{
+  "name": "泸州保险配置需求",
+  "display_region": "四川泸州",
+  "industry": "保险",
+  "regions": ["泸州", "泸州市"],
+  "keywords": ["保险", "投保", "保障方案"],
+  "exclude_keywords": ["招聘", "招募", "加盟", "培训", "代理人招聘"],
+  "business_intro": "在四川泸州提供中国平安保险解决方案，先了解你的保障需求，再一起比较适合的配置方式",
+  "interval_minutes": 1440,
+  "min_score": 60,
+  "enabled": false
+}
