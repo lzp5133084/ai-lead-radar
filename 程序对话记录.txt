@@ -111,5 +111,22 @@ D. 维持现状，雷达每日自动双引擎监控。
   （申能财产保险四川省分公司·泸州·score 75·待人工审核），真实收货达成。
 - 单元测试 96 项全部通过；《国内互联网搜索说明.txt》已加第四引擎段。
 
-十、待办
-- 发布：上传 GitHub 仓库 + 同步 ecojia.cn 工具清单（军哥已确认都做）。
+十、发布完成：GitHub 仓库 + ecojia.cn 工具清单（2026-10-30）
+
+- GitHub：https://github.com/lzp5133084/ai-lead-radar（公开仓库，main 分支）。
+  本地 git init 首次提交 41 个文件（data/ 密钥库、runtime/ 便携运行时已 gitignore，
+  全部文档经扫描无完整密钥泄露）。github.com 的 git 数据通道在本机被 SNI 阻断
+  （schannel/openssl 均握手失败），改用 api.github.com 的 Git Data API 推送完成。
+  注意：本机未开 VPN 时 git push/fetch 均不可用，开 VPN 后执行
+  git fetch origin && git reset --hard origin/main 即可对齐历史正常使用。
+- ecojia.cn：工具清单新增 T36「客资雷达」（服务器 portal + sites 两份
+  ecosystem.json 已更新，本地数字生态家园副本已同步为服务器最新版）；
+  工具介绍页 https://tools.ecojia.cn/lead-radar/ 已上线（黑金2027风格，
+  Canvas 雷达扫描动画、四引擎卡片、GitHub 下载卡、合规说明、作者与更新日期），
+  服务器目录 /opt/ecojia/tools/lead-radar/（nginx 8080 → tools.ecojia.cn）。
+  浏览器实测：页面 200、动画正常、链接正确、无 JS 报错。
+- 服务器：腾讯云 118.24.173.246；门户服务 ecojia-portal（gunicorn 8400）
+  改清单后需 restart 才生效；tools 静态目录 /opt/ecojia/tools/（登录方式另存本机保险柜）。
+
+十一、待办
+- 无。四方向全部完成且有真实收货，发布已完成。
