@@ -45,13 +45,14 @@ def local_addresses():
 
 class Server(ThreadingHTTPServer):
     daemon_threads = True
-    def __init__(self, address, radar):
+    def __init__(self, address, radar, public_hosts=None):
         super().__init__(address, Handler)
         self.radar = radar
         self.sessions = {}
         self.failures = {}
         self.lock = threading.RLock()
-        self.allowed_hosts = local_addresses()
+        # 反代公网部署时，经 --public-host 显式声明的域名同样合法。
+        self.allowed_hosts = local_addresses() | set(public_hosts or [])
         self.radar.lan_urls = [f'http://{a}:{self.server_port}' for a in sorted(self.allowed_hosts)
                               if a not in ('127.0.0.1', 'localhost', '::1') and ':' not in a] if radar.lan else []
 
@@ -106,7 +107,12 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.headers.get('Origin')
         if not origin:
             return True
-        return origin == 'http://' + self.headers.get('Host', '')
+        # 服务只监听回环地址；能带上 X-Forwarded-Proto 的请求必来自本机反代，
+        # 此时浏览器看到的源是 https://公网域名 而非 http://127.0.0.1。
+        proto = self.headers.get('X-Forwarded-Proto', 'http')
+        if proto not in ('http', 'https'):
+            return False
+        return origin == proto + '://' + self.headers.get('Host', '')
 
     def token(self):
         try:
@@ -303,7 +309,16 @@ def main():
     parser.add_argument('--data-dir', default=str(ROOT / 'data'))
     parser.add_argument('--no-browser', action='store_true')
     parser.add_argument('--reset-password', action='store_true')
+    parser.add_argument('--public-host', action='append', default=[],
+                        help='公网反代域名白名单，可多次指定（如 --public-host radar.ecojia.cn）')
     args = parser.parse_args()
+    public_hosts = []
+    for name in args.public_host:
+        name = str(name).strip().lower().rstrip('.')
+        if not name or len(name) > 253 or any(c not in 'abcdefghijklmnopqrstuvwxyz0123456789.-' for c in name) \
+                or '..' in name or name.startswith(('-', '.')) or name.endswith(('-', '.')):
+            parser.error('--public-host 需要合法域名（如 radar.ecojia.cn）')
+        public_hosts.append(name)
     Path(args.data_dir).mkdir(parents=True, exist_ok=True)
     instance_lock = open(Path(args.data_dir) / 'service.lock', 'a+b')
     try:
@@ -325,7 +340,7 @@ def main():
     if args.reset_password:
         radar.config.reset_password()
     try:
-        server = Server(('0.0.0.0' if args.lan else '127.0.0.1', args.port), radar)
+        server = Server(('0.0.0.0' if args.lan else '127.0.0.1', args.port), radar, public_hosts=public_hosts)
     except OSError:
         print('端口被占用或无法启动，请关闭其他客资雷达窗口，或用 --port 指定其他端口。')
         return 1
