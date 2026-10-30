@@ -289,3 +289,135 @@ def csv_export(leads):
             row.append(val)
         writer.writerow(row)
     return ('\ufeff' + out.getvalue()).encode('utf-8')
+
+
+# 四川省行政区划（21 个市州 → 区县），用于区域统计与树状图。
+SICHUAN_ADMIN = {
+    '成都市': ['锦江区', '青羊区', '金牛区', '武侯区', '成华区', '龙泉驿区', '青白江区', '新都区',
+              '温江区', '双流区', '郫都区', '新津区', '都江堰市', '彭州市', '邛崃市', '崇州市',
+              '简阳市', '金堂县', '大邑县', '蒲江县'],
+    '自贡市': ['自流井区', '贡井区', '大安区', '沿滩区', '荣县', '富顺县'],
+    '攀枝花市': ['东区', '西区', '仁和区', '米易县', '盐边县'],
+    '泸州市': ['江阳区', '纳溪区', '龙马潭区', '泸县', '合江县', '叙永县', '古蔺县'],
+    '德阳市': ['旌阳区', '罗江区', '广汉市', '什邡市', '绵竹市', '中江县'],
+    '绵阳市': ['涪城区', '游仙区', '安州区', '江油市', '三台县', '盐亭县', '梓潼县',
+              '北川羌族自治县', '平武县'],
+    '广元市': ['利州区', '昭化区', '朝天区', '旺苍县', '青川县', '剑阁县', '苍溪县'],
+    '遂宁市': ['船山区', '安居区', '射洪市', '蓬溪县', '大英县'],
+    '内江市': ['市中区', '东兴区', '隆昌市', '威远县', '资中县'],
+    '乐山市': ['市中区', '沙湾区', '五通桥区', '金口河区', '峨眉山市', '犍为县', '井研县',
+              '夹江县', '沐川县', '峨边彝族自治县', '马边彝族自治县'],
+    '南充市': ['顺庆区', '高坪区', '嘉陵区', '阆中市', '南部县', '营山县', '蓬安县',
+              '仪陇县', '西充县'],
+    '眉山市': ['东坡区', '彭山区', '仁寿县', '洪雅县', '丹棱县', '青神县'],
+    '宜宾市': ['翠屏区', '南溪区', '叙州区', '江安县', '长宁县', '高县', '珙县',
+              '筠连县', '兴文县', '屏山县'],
+    '广安市': ['广安区', '前锋区', '华蓥市', '岳池县', '武胜县', '邻水县'],
+    '达州市': ['通川区', '达川区', '万源市', '宣汉县', '开江县', '大竹县', '渠县'],
+    '雅安市': ['雨城区', '名山区', '荥经县', '汉源县', '石棉县', '天全县', '芦山县', '宝兴县'],
+    '巴中市': ['巴州区', '恩阳区', '通江县', '南江县', '平昌县'],
+    '资阳市': ['雁江区', '安岳县', '乐至县'],
+    '阿坝藏族羌族自治州': ['马尔康市', '汶川县', '理县', '茂县', '松潘县', '九寨沟县',
+                        '金川县', '小金县', '黑水县', '壤塘县', '阿坝县', '若尔盖县', '红原县'],
+    '甘孜藏族自治州': ['康定市', '泸定县', '丹巴县', '九龙县', '雅江县', '道孚县', '炉霍县',
+                      '甘孜县', '新龙县', '德格县', '白玉县', '石渠县', '色达县', '理塘县',
+                      '巴塘县', '乡城县', '稻城县', '得荣县'],
+    '凉山彝族自治州': ['西昌市', '会理市', '木里藏族自治县', '盐源县', '德昌县', '会东县',
+                      '宁南县', '普格县', '布拖县', '金阳县', '昭觉县', '喜德县', '冕宁县',
+                      '越西县', '甘洛县', '美姑县', '雷波县'],
+}
+
+# 市名简称（用于匹配 region 字段里的"泸州"这类简称）
+CITY_SHORT = {
+    '成都市': '成都', '自贡市': '自贡', '攀枝花市': '攀枝花', '泸州市': '泸州',
+    '德阳市': '德阳', '绵阳市': '绵阳', '广元市': '广元', '遂宁市': '遂宁',
+    '内江市': '内江', '乐山市': '乐山', '南充市': '南充', '眉山市': '眉山',
+    '宜宾市': '宜宾', '广安市': '广安', '达州市': '达州', '雅安市': '雅安',
+    '巴中市': '巴中', '资阳市': '资阳', '阿坝藏族羌族自治州': '阿坝',
+    '甘孜藏族自治州': '甘孜', '凉山彝族自治州': '凉山',
+}
+
+
+def _parse_region(region_text):
+    """从 '泸州 / 泸州市 / 江阳区' 这类字段中解析出归属的市与区县列表。"""
+    parts = [p.strip() for p in str(region_text).split(' / ') if p.strip()]
+    if not parts:
+        return None, []
+    matched_city = None
+    for city, short in CITY_SHORT.items():
+        if any(short in p or city in p for p in parts):
+            matched_city = city
+            break
+    if not matched_city:
+        return None, []
+    matched_districts = []
+    city_short = CITY_SHORT[matched_city]
+    for district in SICHUAN_ADMIN[matched_city]:
+        # 优先用完整区县名匹配（如"江阳区""泸县"）
+        if any(district in p for p in parts):
+            matched_districts.append(district)
+            continue
+        # 辅助：去掉区/县/市后缀后匹配，但短名至少 2 字且不能等于市简称，
+        # 避免"泸县"去掉后缀成"泸"后误匹配"泸州"。
+        d_short = re.sub(r'[区县市自治州]+$', '', district)
+        if len(d_short) >= 2 and d_short != city_short and any(d_short in p for p in parts):
+            matched_districts.append(district)
+    return matched_city, matched_districts
+
+
+def region_stats(leads):
+    """按四川省→市→区县聚合客资统计，供区域统计页与树状图使用。"""
+    stats = {}
+    for city, districts in SICHUAN_ADMIN.items():
+        stats[city] = {'total': 0, 'high_intent': 0, 'approved': 0,
+                       'districts': {d: {'total': 0, 'high_intent': 0, 'approved': 0} for d in districts}}
+    for lead in leads:
+        city, districts = _parse_region(lead.get('region', ''))
+        if not city:
+            continue
+        score = lead.get('score', 0) or 0
+        approved = lead.get('review_status') == 'approved'
+        stats[city]['total'] += 1
+        if score >= 80:
+            stats[city]['high_intent'] += 1
+        if approved:
+            stats[city]['approved'] += 1
+        targets = districts if districts else ['市本级']
+        for d in targets:
+            bucket = stats[city]['districts'].setdefault(d, {'total': 0, 'high_intent': 0, 'approved': 0})
+            bucket['total'] += 1
+            if score >= 80:
+                bucket['high_intent'] += 1
+            if approved:
+                bucket['approved'] += 1
+    summary = {
+        'total_leads': sum(c['total'] for c in stats.values()),
+        'high_intent': sum(c['high_intent'] for c in stats.values()),
+        'approved': sum(c['approved'] for c in stats.values()),
+        'cities_with_leads': sum(1 for c in stats.values() if c['total'] > 0),
+    }
+    treemap = {
+        'name': '四川省',
+        'children': [
+            {'name': city, 'value': data['total'],
+             'children': [{'name': d, 'value': dd['total']}
+                          for d, dd in data['districts'].items() if dd['total'] > 0]}
+            for city, data in stats.items() if data['total'] > 0
+        ]
+    }
+    return {'summary': summary, 'cities': stats, 'treemap': treemap}
+
+
+def region_csv(stats):
+    """导出水印 + 四川省区域统计 CSV（市→区县）。"""
+    out = io.StringIO(newline='')
+    writer = csv.writer(out)
+    writer.writerow(['市州', '区县', '客资总数', '高意向(≥80分)', '审核通过'])
+    for city, data in stats['cities'].items():
+        if data['total'] == 0:
+            continue
+        writer.writerow([city, '全市合计', data['total'], data['high_intent'], data['approved']])
+        for district, dd in data['districts'].items():
+            if dd['total'] > 0:
+                writer.writerow([city, district, dd['total'], dd['high_intent'], dd['approved']])
+    return ('\ufeff' + out.getvalue()).encode('utf-8')
