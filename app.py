@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from radar.core import csv_export, filtered_leads
+from radar.core import csv_export, filtered_leads, region_stats, region_csv
 from radar.service import Radar
 
 ROOT = Path(__file__).resolve().parent
@@ -177,7 +177,7 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlsplit(self.path)
         path = parsed.path
         params = {k: v[0] for k, v in parse_qs(parsed.query).items()}
-        if method == 'GET' and path in ('/', '/index.html', '/style.css', '/app.js', '/workspace.js'):
+        if method == 'GET' and path in ('/', '/index.html', '/style.css', '/app.js', '/workspace.js', '/echarts.min.js'):
             file = ROOT / 'web' / ('index.html' if path == '/' else path[1:])
             self.send(200, file.read_bytes(), mimetypes.guess_type(file.name)[0] + '; charset=utf-8')
             return
@@ -214,6 +214,12 @@ class Handler(BaseHTTPRequestHandler):
             elif path == '/api/export.csv':
                 self.send(200, csv_export(filtered_leads(radar.db, params)), 'text/csv; charset=utf-8',
                           {'Content-Disposition': 'attachment; filename="lead-radar.csv"'})
+            elif path == '/api/region-stats':
+                self.ok(region_stats(filtered_leads(radar.db, params)))
+            elif path == '/api/region-stats.csv':
+                self.send(200, region_csv(region_stats(filtered_leads(radar.db, params))),
+                          'text/csv; charset=utf-8',
+                          {'Content-Disposition': 'attachment; filename="sichuan-region-stats.csv"'})
             else:
                 self.fail(404, '接口不存在')
             return
