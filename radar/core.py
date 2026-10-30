@@ -382,7 +382,14 @@ def region_stats(leads):
             stats[city]['high_intent'] += 1
         if approved:
             stats[city]['approved'] += 1
-        targets = districts if districts else ['市本级']
+        # 一条客资写明多个区县时，若逐个区县各记 1 条，区县合计会大于市州合计，
+        # 统计对比就会失真。这里统一归入「多区县」，保证各区县之和等于市州总数。
+        if len(districts) == 1:
+            targets = districts
+        elif len(districts) > 1:
+            targets = ['多区县']
+        else:
+            targets = ['市本级']
         for d in targets:
             bucket = stats[city]['districts'].setdefault(d, {'total': 0, 'high_intent': 0, 'approved': 0})
             bucket['total'] += 1
