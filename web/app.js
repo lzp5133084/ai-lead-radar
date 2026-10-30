@@ -20,6 +20,35 @@ function button(label,action,attrs='',kind='') {return `<button type="button" cl
 function idAttrs(id) {return `data-id="${e(id)}"`;}
 function sourceKind(value) {return {rss:'公开 RSS',web:'公开网页',json_api:'授权 JSON API',tavily_search:'Tavily 公开搜索 API',brave_search:'Brave 搜索 API（需书面存储许可）',bing_rss:'必应国内公开搜索 RSS',volc_search:'火山方舟联网搜索',baidu_search:'百度AI搜索'}[value]||value||'未设置';}
 function isSearchSource(kind){return ['tavily_search','brave_search','bing_rss','volc_search','baidu_search'].includes(kind);}
+// 四川省市州简称，用于提示"标题写的是别的城市、正文命中本地关键词"的归属风险。
+const SICHUAN_SHORT = ['成都','自贡','攀枝花','泸州','德阳','绵阳','广元','遂宁','内江','乐山','南充','眉山','宜宾','广安','达州','雅安','巴中','资阳','阿坝','甘孜','凉山'];
+function cityHint(lead) {
+  const title = String(lead.title || ''), region = String(lead.region || '');
+  const inTitle = SICHUAN_SHORT.filter(x => title.includes(x));
+  const own = SICHUAN_SHORT.find(x => region.includes(x));
+  if (inTitle.length && own && !inTitle.includes(own)) {
+    return `标题实为${inTitle[0]}，正文含「${own}」被规则命中，需人工核实归属`;
+  }
+  return '';
+}
+function deadlineText(lead) {
+  const text = String(lead.title || '') + '\n' + String(lead.text || '');
+  const hit = text.match(/(?:截止时间|截止日期|投标截止|报名截止|递交截止|开标时间)[:：]?\s*(20\d{2}[-年]\d{1,2}[-月]\d{1,2})/);
+  return hit ? hit[1].replace(/年|月/g, '-').replace('日', '') : '';
+}
+function leadFieldTable(lead) {
+  const hint = cityHint(lead);
+  const deadline = deadlineText(lead);
+  const point = String(lead.demand_evidence || lead.title || '未记录商机要点');
+  return `<table class="detail-field-table"><thead><tr><th>字段</th><th>内容</th></tr></thead><tbody>
+    <tr><td>地区</td><td>${e(lead.region || '未识别地区')}${hint ? `<span class="warn">（⚠ ${e(hint)}）</span>` : ''}</td></tr>
+    <tr><td>商机要点</td><td><strong>${e(shorten(point, 160))}</strong>${deadline ? `<span>，截止时间 <strong>${e(deadline)}</strong></span>` : ''}</td></tr>
+    <tr><td>来源平台</td><td>${link(lead.url, lead.platform || '公开来源')}</td></tr>
+    <tr><td>搜索引擎</td><td>${e(sourceKind(lead.source_kind))}</td></tr>
+    <tr><td>意向分</td><td><strong>${number(lead.score)}</strong> / 100</td></tr>
+    <tr><td>原文链接</td><td>${link(lead.url, shorten(lead.url || '', 80))}</td></tr>
+  </tbody></table>`;
+}
 function hasStoragePermission(source){const note=String(source.storage_authorization_note||'').trim();return !!source.storage_authorized&&note.length>=10&&note.length<=500;}
 function sourceSelectable(source){return !!source.permission_confirmed&&(source.kind!=='brave_search'||hasStoragePermission(source));}
 function sourceSelectionNote(source){if(!source.permission_confirmed)return '请先在数据源中确认访问许可';if(source.kind==='brave_search'&&!hasStoragePermission(source))return '缺少另行取得的书面存储许可，暂不可选';return '已确认访问许可';}
@@ -88,7 +117,7 @@ function profileNotice(){const p=state.profile;if(!p?.name)return '';return `<di
 
 function renderDashboard() {
   const d=state.dashboard||{},s=d.stats||{},tasks=list(d.tasks),sources=list(d.sources),runs=list(d.runs);
-  return heading('每条线索，来源可追溯','从允许访问的真实来源发现需求。系统筛选候选内容，最终意向与联系许可由你审核。',button('刷新数据','refresh')+button('＋ 新建任务','new-task','','primary'))+
+  return heading('每条线索，来源可追溯','从允许访问的真实来源发现需求。系统筛选候选内容，最终意向与联系许可由你审核。',button('刷新数据','refresh')+button('▦ 区域统计（表格+树状图）','go-region')+button('＋ 新建任务','new-task','','primary'))+
     profileNotice()+
     `<div class="hero-strip"><div><strong>你的真实采集工作台已就绪</strong><p>当前判断引擎：${e(d.engine||'透明规则 v1')} · 自动触达关闭 · 未采集到内容时会如实显示 0 条</p></div><span class="hero-tag">本地存储，人工跟进</span></div><div class="metrics">${[
       ['已保存候选线索',s.total,'▤','来自你的真实采集任务'],['高意向候选',s.high_intent,'↗','透明规则评分 80 分及以上'],['人工审核通过',s.approved,'✓','人工确认内容与使用范围'],['待同步飞书',s.pending_sync,'⇄','审核通过后可写入多维表格']
@@ -118,7 +147,7 @@ function renderRegionStats() {
       ['客资总数',total,'▦','四川省内已采集客资'],['高意向候选',s.high_intent||0,'↗','评分 80 分及以上'],
       ['审核通过',s.approved||0,'✓','人工审核通过'],['覆盖市州',s.cities_with_leads||0,'◈','有客资的市州数']
     ].map(([label,value,icon,note])=>`<div class="metric"><div class="metric-top">${label}<span class="metric-icon">${icon}</span></div><div class="metric-value">${number(value)}</div><p class="metric-note">${note}</p></div>`).join('')}</div>`+
-    `<div class="grid-2"><div><section class="panel"><div class="panel-head"><div><h2>一、四川省各市州总览（主表）</h2><p>点击行查看右侧区县明细</p></div></div>${cities.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>市州</th><th>客资数</th><th>高意向</th><th>审核通过</th><th>占比</th></tr></thead><tbody>${cities.map(([name,data])=>`<tr data-action="select-city" data-city="${e(name)}" style="cursor:pointer${selected===name?';background:#e8f3ed':''}"><td><strong>${e(name)}</strong></td><td>${number(data.total)}</td><td>${number(data.high_intent)}</td><td>${number(data.approved)}</td><td>${total?(data.total/total*100).toFixed(1):'0'}%</td></tr>`).join('')}</tbody></table></div>`:empty('暂无区域数据','执行采集任务后，这里会按市州展示客资分布。')}</section></div><div><section class="panel"><div class="panel-head"><div><h2>二、${e(selected||'区县明细')}（分表）</h2><p>${selected?selected+' 下各区县客资分布（含多个区县的客资计入「多区县」，各区县之和等于市州合计）':'点击左侧市州查看区县分布'}</p></div></div>${districts.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>区县</th><th>客资数</th><th>高意向</th><th>审核通过</th></tr></thead><tbody>${districts.map(([name,data])=>`<tr><td>${e(name)}</td><td>${number(data.total)}</td><td>${number(data.high_intent)}</td><td>${number(data.approved)}</td></tr>`).join('')}</tbody></table></div>`:empty('暂无区县数据','该地市州暂无区县级客资，或点击左侧其他市州。')}</section></div></div>`+
+    `<div class="grid-2"><div><section class="panel"><div class="panel-head"><div><h2>一、四川省各市州总览（主表）</h2><p>点击行查看右侧区县明细</p></div></div>${cities.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>市州</th><th>客资数</th><th>高意向</th><th>审核通过</th><th>占比</th></tr></thead><tbody>${cities.map(([name,data])=>`<tr data-action="select-city" data-city="${e(name)}" style="cursor:pointer${selected===name?';background:#e8f3ed':''}"><td><strong>${e(name)}</strong></td><td>${number(data.total)}</td><td>${number(data.high_intent)}</td><td>${number(data.approved)}</td><td>${total?(data.total/total*100).toFixed(1):'0'}%</td></tr>`).join('')}</tbody></table></div>`:empty('暂无区域数据','执行采集任务后，这里会按市州展示客资分布。')}</section></div><div><section class="panel"><div class="panel-head"><div><h2>二、${e(selected||'区县明细')}（分表）</h2><p>${selected?selected+' 下各区县客资分布（含多个区县的客资计入「多区县」，各区县之和等于市州合计）':'点击左侧市州查看区县分布'}</p></div></div>${districts.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>区县</th><th>客资数</th><th>高意向</th><th>审核通过</th><th>明细</th></tr></thead><tbody>${districts.map(([name,data])=>`<tr><td>${e(name)}</td><td>${number(data.total)}</td><td>${number(data.high_intent)}</td><td>${number(data.approved)}</td><td>${['市本级','多区县'].includes(name)?'<span class="tiny muted">按原文核对</span>':button('查看','district-leads',`data-district="${e(name)}"`,'small ghost')}</td></tr>`).join('')}</tbody></table></div>`:empty('暂无区县数据','该地市州暂无区县级客资，或点击左侧其他市州。')}</section></div></div>`+
     `<section class="panel mt-20"><div class="panel-head"><div><h2>三、四川省客资分布树状图</h2><p>矩形面积代表客资数量，层级为 省 → 市州 → 区县</p></div></div><div class="panel-body"><div id="region-treemap" style="width:100%;height:500px;min-height:500px;display:block;"></div></div></section>`;
 }
 function initTreemap(){
@@ -254,6 +283,7 @@ function leadForm(id) {
   const followupPermission=searchContent?checkbox('followup_permission_confirmed','我已核实原文明确邀请咨询回复或商业联系，并有权使用这条内容',!!l.followup_permission_confirmed,'只有明确邀请的内容才能审核通过；审核通过不会自动联系对方。'):'';
   openModal('线索来源核对与人工审核',`<div class="detail-grid"><section>
     <div class="tags">${tag(l.platform||'公开来源')}${tag(l.source_type||'真实内容')}${tag(`${l.score??0} / 100`,'green')}</div>
+    ${leadFieldTable(l)}
     <h3 class="detail-title">${e(l.title||'原始内容')}</h3><div class="detail-label">原文 / 搜索摘要（摘要需打开来源核实）</div><div class="original-text">${e(l.text||'未提供原文')}</div>
     <div class="detail-meta"><div>地区：${e(l.region||'未识别地区')} · 行业：${e(l.industry||'—')}</div><div>来源发布时间：${e(date(l.published_at))}</div><div>采集时间：${e(date(l.collected_at))}</div><div>最近出现：${e(date(l.last_seen_at))}</div><div>${link(l.url,'打开原始来源')}</div>${l.record_id?`<div>飞书记录 ID：${e(l.record_id)}</div>`:''}</div>
     <div class="detail-label">规则评分理由</div>${list(l.reasons).length?`<ul class="reasons">${list(l.reasons).map(x=>`<li>${e(typeof x==='string'?x:JSON.stringify(x))}</li>`).join('')}</ul>`:'<p class="help">此记录没有评分理由。</p>'}
@@ -283,6 +313,7 @@ async function handleAction(action,target) {
   if(action==='lead-detail')return leadForm(id);
   if(action==='reset-filters'){state.filters={q:'',region:'',industry:'',min_score:'0',status:'',review_status:''};return loadPage('leads');}
   if(action==='select-city'){state.selectedCity=target.dataset.city||'';return renderContent();}
+  if(action==='district-leads'){state.filters={q:'',region:target.dataset.district||'',industry:'',min_score:'0',status:'',review_status:''};return loadPage('leads');}
   if(action==='run-task'){target.disabled=true;try{const result=await api(`/api/tasks/${encodeURIComponent(id)}/run`,'POST',{});toast(`已启动真实采集${result?.run_id?'，运行 #'+result.run_id:''}。可在运行日志查看结果。`);await loadPage(state.page,true);}finally{if(target.isConnected)target.disabled=false;}return;}
   if(action==='toggle-task'){const task=state.tasks.find(x=>String(x.id)===String(id));await api(`/api/tasks/${encodeURIComponent(id)}`,'PATCH',{enabled:!task.enabled});toast(task.enabled?'已暂停定时任务。':'已启用定时任务。');return loadPage('tasks',true);}
   if(action==='delete-source'){if(!confirm('删除此数据源？引用它的任务可能无法继续采集，请先核对相关任务。'))return;await api(`/api/sources/${encodeURIComponent(id)}`,'DELETE');toast('数据源已删除。');return loadPage('sources',true);}
