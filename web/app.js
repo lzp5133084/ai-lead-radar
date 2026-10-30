@@ -92,7 +92,7 @@ function renderContent(error='') {
   const target=document.getElementById('page-content');if(!target)return;
   const renderer={dashboard:renderDashboard,leads:renderLeads,region:renderRegionStats,tasks:renderTasks,sources:renderSources,logs:renderLogs,settings:renderSettings,privacy:renderPrivacy,guide:renderGuide,geo:renderGeo}[state.page];
   target.innerHTML=(error?`<div class="notice error page-error" role="alert">${e(error)} ${button('重试','refresh','','small')}</div>`:'')+(state.loading?'<div class="loading"><span class="spinner"></span>正在读取本地数据…</div>':renderer());
-  if(state.page==='region'){setTimeout(initTreemap,60);}
+  if(state.page==='region'){setTimeout(initMindmap,60);}
 }
 async function loadPage(page=state.page,quiet=false) {
   if(!state.session)return;
@@ -117,7 +117,7 @@ function profileNotice(){const p=state.profile;if(!p?.name)return '';return `<di
 
 function renderDashboard() {
   const d=state.dashboard||{},s=d.stats||{},tasks=list(d.tasks),sources=list(d.sources),runs=list(d.runs);
-  return heading('每条线索，来源可追溯','从允许访问的真实来源发现需求。系统筛选候选内容，最终意向与联系许可由你审核。',button('刷新数据','refresh')+button('▦ 区域统计（表格+树状图）','go-region')+button('＋ 新建任务','new-task','','primary'))+
+  return heading('每条线索，来源可追溯','从允许访问的真实来源发现需求。系统筛选候选内容，最终意向与联系许可由你审核。',button('刷新数据','refresh')+button('▦ 区域统计（表格+思维导图）','go-region')+button('＋ 新建任务','new-task','','primary'))+
     profileNotice()+
     `<div class="hero-strip"><div><strong>你的真实采集工作台已就绪</strong><p>当前判断引擎：${e(d.engine||'透明规则 v1')} · 自动触达关闭 · 未采集到内容时会如实显示 0 条</p></div><span class="hero-tag">本地存储，人工跟进</span></div><div class="metrics">${[
       ['已保存候选线索',s.total,'▤','来自你的真实采集任务'],['高意向候选',s.high_intent,'↗','透明规则评分 80 分及以上'],['人工审核通过',s.approved,'✓','人工确认内容与使用范围'],['待同步飞书',s.pending_sync,'⇄','审核通过后可写入多维表格']
@@ -148,22 +148,45 @@ function renderRegionStats() {
       ['审核通过',s.approved||0,'✓','人工审核通过'],['覆盖市州',s.cities_with_leads||0,'◈','有客资的市州数']
     ].map(([label,value,icon,note])=>`<div class="metric"><div class="metric-top">${label}<span class="metric-icon">${icon}</span></div><div class="metric-value">${number(value)}</div><p class="metric-note">${note}</p></div>`).join('')}</div>`+
     `<div class="grid-2"><div><section class="panel"><div class="panel-head"><div><h2>一、四川省各市州总览（主表）</h2><p>点击行查看右侧区县明细</p></div></div>${cities.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>市州</th><th>客资数</th><th>高意向</th><th>审核通过</th><th>占比</th></tr></thead><tbody>${cities.map(([name,data])=>`<tr data-action="select-city" data-city="${e(name)}" style="cursor:pointer${selected===name?';background:#e8f3ed':''}"><td><strong>${e(name)}</strong></td><td>${number(data.total)}</td><td>${number(data.high_intent)}</td><td>${number(data.approved)}</td><td>${total?(data.total/total*100).toFixed(1):'0'}%</td></tr>`).join('')}</tbody></table></div>`:empty('暂无区域数据','执行采集任务后，这里会按市州展示客资分布。')}</section></div><div><section class="panel"><div class="panel-head"><div><h2>二、${e(selected||'区县明细')}（分表）</h2><p>${selected?selected+' 下各区县客资分布（含多个区县的客资计入「多区县」，各区县之和等于市州合计）':'点击左侧市州查看区县分布'}</p></div></div>${districts.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>区县</th><th>客资数</th><th>高意向</th><th>审核通过</th><th>明细</th></tr></thead><tbody>${districts.map(([name,data])=>`<tr><td>${e(name)}</td><td>${number(data.total)}</td><td>${number(data.high_intent)}</td><td>${number(data.approved)}</td><td>${['市本级','多区县'].includes(name)?'<span class="tiny muted">按原文核对</span>':button('查看','district-leads',`data-district="${e(name)}"`,'small ghost')}</td></tr>`).join('')}</tbody></table></div>`:empty('暂无区县数据','该地市州暂无区县级客资，或点击左侧其他市州。')}</section></div></div>`+
-    `<section class="panel mt-20"><div class="panel-head"><div><h2>三、四川省客资分布树状图</h2><p>矩形面积代表客资数量，层级为 省 → 市州 → 区县</p></div></div><div class="panel-body"><div id="region-treemap" style="width:100%;height:500px;min-height:500px;display:block;"></div></div></section>`;
+    `<section class="panel mt-20"><div class="panel-head"><div><h2>三、四川省客资分布思维导图</h2><p>省 → 市州 → 区县逐级展开，节点上直接标出条数；点市州切换上方分表，点区县查看对应客资。</p></div><div class="button-row">${button('展开一级','mindmap-lite','','small ghost')}${button('全部展开','mindmap-full','','small ghost')}</div></div><div class="panel-body"><div id="region-mindmap" style="width:100%;height:520px;min-height:520px;display:block;"></div><p class="tiny muted mt-10" id="mindmap-tip"></p></div></section>`;
 }
-function initTreemap(){
-  const el=document.getElementById('region-treemap');
-  if(!el||typeof echarts==='undefined'||!state.regionStats)return;
-  el.style.cssText='width:100%;height:500px;min-height:500px;display:block;';
-  const chart=echarts.init(el);
-  chart.setOption({
-    tooltip:{formatter:p=>`${p.name}<br/>客资：${p.value||0} 条`},
-    series:[{type:'treemap',data:[state.regionStats.treemap],roam:false,nodeClick:false,
-      breadcrumb:{show:true},label:{show:true,formatter:'{b}'},
-      levels:[{itemStyle:{borderColor:'#fff',borderWidth:3,gapWidth:2}},
-              {itemStyle:{borderColor:'#fff',borderWidth:1,gapWidth:1}}]}]
+let mindChart=null, mindDepth=2;
+function initMindmap(){
+  const el=document.getElementById('region-mindmap');
+  const tip=document.getElementById('mindmap-tip');
+  if(!el||!state.regionStats)return;
+  if(typeof echarts==='undefined'){if(tip)tip.textContent='图表组件未加载，请按 Ctrl+F5 强制刷新后重试。';return;}
+  if(mindChart){try{mindChart.dispose();}catch(err){}mindChart=null;}
+  const rs=state.regionStats, sum=rs.summary||{};
+  const data={name:'四川省',value:sum.total_leads||0,symbolSize:24,itemStyle:{color:'#1d6b57'},
+    children:(rs.treemap?.children||[]).map(c=>({name:c.name,value:c.value,symbolSize:15,itemStyle:{color:'#3b8a72'},
+      children:(c.children||[]).map(d=>({name:d.name,value:d.value,symbolSize:9,itemStyle:{color:'#8fc3b1'}}))}))};
+  mindChart=echarts.init(el);
+  mindChart.setOption({
+    tooltip:{trigger:'item',formatter: p=>`${p.data.name}：${p.data.value||0} 条`},
+    series:[{type:'tree',data:[data],top:'4%',left:'6%',bottom:'4%',right:'28%',
+      orient:'LR',layout:'orthogonal',edgeShape:'curve',edgeForkPosition:'60%',
+      roam:true,expandAndCollapse:true,initialTreeDepth:mindDepth,
+      animationDuration:500,animationDurationUpdate:300,
+      itemStyle:{borderColor:'#fff',borderWidth:2},
+      lineStyle:{color:'#bcd8cb',width:2,curveness:0.4},
+      label:{position:'left',verticalAlign:'middle',align:'right',distance:9,
+        formatter:p=>`{n|${p.data.name}}{v|${p.data.value||0}}`,
+        rich:{n:{fontSize:13,color:'#22403a',fontWeight:600},v:{fontSize:12,color:'#0b7a5f',fontWeight:700,padding:[0,0,0,7]}}},
+      leaves:{label:{position:'right',align:'left'}},
+      emphasis:{focus:'descendant'}}]
   });
-  setTimeout(()=>chart.resize(),120);
-  window.addEventListener('resize',()=>chart.resize());
+  mindChart.on('click',p=>{
+    const name=p.data?.name||'';
+    if(!name||name==='四川省')return;
+    if((p.data.children||[]).length){state.selectedCity=name;renderContent();return;}
+    if(['市本级','多区县'].includes(name)){toast('「'+name+'」是未落到具体区县的分组，请打开原文逐条核对归属。');return;}
+    state.filters={q:'',region:name,industry:'',min_score:'0',status:'',review_status:''};
+    loadPage('leads');
+  });
+  if(tip)tip.textContent='提示：点市州节点切换上方分表；点区县节点直接进入线索管理查看该区县客资；滚轮可缩放、拖拽可平移。';
+  setTimeout(()=>mindChart&&mindChart.resize(),120);
+  if(!initMindmap.bound){initMindmap.bound=true;window.addEventListener('resize',()=>mindChart&&mindChart.resize());}
 }
 function renderTasks() {
   return heading('采集任务','指定地区和需求词，在选定的许可来源中定时寻找匹配内容。电脑需保持服务运行。',button('＋ 新建任务','new-task','','primary'))+
@@ -314,6 +337,8 @@ async function handleAction(action,target) {
   if(action==='reset-filters'){state.filters={q:'',region:'',industry:'',min_score:'0',status:'',review_status:''};return loadPage('leads');}
   if(action==='select-city'){state.selectedCity=target.dataset.city||'';return renderContent();}
   if(action==='district-leads'){state.filters={q:'',region:target.dataset.district||'',industry:'',min_score:'0',status:'',review_status:''};return loadPage('leads');}
+  if(action==='mindmap-lite'){mindDepth=1;return initMindmap();}
+  if(action==='mindmap-full'){mindDepth=2;return initMindmap();}
   if(action==='run-task'){target.disabled=true;try{const result=await api(`/api/tasks/${encodeURIComponent(id)}/run`,'POST',{});toast(`已启动真实采集${result?.run_id?'，运行 #'+result.run_id:''}。可在运行日志查看结果。`);await loadPage(state.page,true);}finally{if(target.isConnected)target.disabled=false;}return;}
   if(action==='toggle-task'){const task=state.tasks.find(x=>String(x.id)===String(id));await api(`/api/tasks/${encodeURIComponent(id)}`,'PATCH',{enabled:!task.enabled});toast(task.enabled?'已暂停定时任务。':'已启用定时任务。');return loadPage('tasks',true);}
   if(action==='delete-source'){if(!confirm('删除此数据源？引用它的任务可能无法继续采集，请先核对相关任务。'))return;await api(`/api/sources/${encodeURIComponent(id)}`,'DELETE');toast('数据源已删除。');return loadPage('sources',true);}
