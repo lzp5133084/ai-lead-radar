@@ -1,8 +1,8 @@
 'use strict';
 
-const state = {session:null,page:'dashboard',dashboard:null,profile:null,tasks:[],sources:[],leads:[],runs:[],settings:null,filters:{q:'',region:'',industry:'',min_score:'0',status:'',review_status:''},loading:false,menu:false};
+const state = {session:null,page:'dashboard',dashboard:null,profile:null,tasks:[],sources:[],leads:[],runs:[],settings:null,regionStats:null,filters:{q:'',region:'',industry:'',min_score:'0',status:'',review_status:''},loading:false,menu:false,selectedCity:''};
 const navItems = [
-  ['dashboard','◎','工作概览'],['leads','▤','线索管理'],['tasks','◷','采集任务'],['sources','⌘','真实数据源'],['logs','☷','运行日志'],['guide','?','使用与运行说明'],['geo','✧','GEO 内容工作台'],['settings','⚙','飞书与设置'],['privacy','◇','使用边界']
+  ['dashboard','◎','工作概览'],['leads','▤','线索管理'],['region','▦','区域统计'],['tasks','◷','采集任务'],['sources','⌘','真实数据源'],['logs','☷','运行日志'],['guide','?','使用与运行说明'],['geo','✧','GEO 内容工作台'],['settings','⚙','飞书与设置'],['privacy','◇','使用边界']
 ];
 const app = document.getElementById('app');
 const modalRoot = document.getElementById('modal-root');
@@ -61,8 +61,9 @@ function renderShell() {
 }
 function renderContent(error='') {
   const target=document.getElementById('page-content');if(!target)return;
-  const renderer={dashboard:renderDashboard,leads:renderLeads,tasks:renderTasks,sources:renderSources,logs:renderLogs,settings:renderSettings,privacy:renderPrivacy,guide:renderGuide,geo:renderGeo}[state.page];
+  const renderer={dashboard:renderDashboard,leads:renderLeads,region:renderRegionStats,tasks:renderTasks,sources:renderSources,logs:renderLogs,settings:renderSettings,privacy:renderPrivacy,guide:renderGuide,geo:renderGeo}[state.page];
   target.innerHTML=(error?`<div class="notice error page-error" role="alert">${e(error)} ${button('重试','refresh','','small')}</div>`:'')+(state.loading?'<div class="loading"><span class="spinner"></span>正在读取本地数据…</div>':renderer());
+  if(state.page==='region'){setTimeout(initTreemap,60);}
 }
 async function loadPage(page=state.page,quiet=false) {
   if(!state.session)return;
@@ -71,6 +72,7 @@ async function loadPage(page=state.page,quiet=false) {
   try {
     if(page==='dashboard'){const responses=await Promise.all([api('/api/dashboard'),loadProfile()]);state.dashboard=responses[0];}
     else if(page==='leads'){state.leads=list(await api('/api/leads?'+new URLSearchParams(state.filters)));}
+    else if(page==='region'){state.regionStats=await api('/api/region-stats?'+new URLSearchParams(state.filters));if(!state.selectedCity){const cities=Object.entries(state.regionStats?.cities||{}).filter(([,v])=>v.total>0).sort((a,b)=>b[1].total-a[1].total);state.selectedCity=cities[0]?.[0]||'';}}
     else if(page==='tasks'){const responses=await Promise.all([api('/api/tasks'),api('/api/sources')]);state.tasks=list(responses[0]);state.sources=list(responses[1]);}
     else if(page==='sources'){state.sources=list(await api('/api/sources'));}
     else if(page==='logs'){state.runs=list(await api('/api/runs'));}
@@ -100,6 +102,39 @@ function renderLeads() {
   const exportUrl='/api/export.csv?'+new URLSearchParams(f);
   return heading('线索管理','每条候选内容保留原始链接、原文、采集时间与判断理由。审核通过后，才可作为已审核客资使用。',`<a class="btn" href="${e(exportUrl)}">↓ 导出 CSV</a>`+button('刷新','refresh'))+
     `<form class="toolbar" data-form="filters">${field('搜索原文 / 标题','q',f.q,'search','','placeholder="需求关键词、来源内容…"')}${field('地区','region',f.region,'text','','placeholder="如：上海 / 浦东"')}${field('行业','industry',f.industry,'text','','placeholder="装修 / 保险"')}${select('最低评分','min_score',f.min_score,[['0','全部评分'],['50','50 分及以上'],['70','70 分及以上'],['85','85 分及以上']])}${select('人工审核','review_status',f.review_status,[['','全部审核状态'],['pending','待人工审核'],['approved','审核通过'],['rejected','已拒绝']])}${select('跟进状态','status',f.status,[['','全部跟进状态'],['new','未跟进'],['contacted','已人工跟进'],['closed','已结束']])}<button class="btn primary" type="submit">筛选</button>${button('重置','reset-filters','','small')}</form><div class="notice mb-18">评分仅用于排序，不代表需求已核实。请先打开来源核对原文、公开目的和联系许可；导出中的联系方式与话术仅供审核通过的记录使用。</div><section class="panel"><div class="panel-head"><h2>候选内容 <span class="muted tiny">${state.leads.length} 条</span></h2><span class="tiny muted">按当前筛选条件展示</span></div>${state.leads.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>真实内容</th><th>地区 / 来源</th><th>意向评分</th><th>人工审核</th><th>采集时间</th><th>操作</th></tr></thead><tbody>${state.leads.map(l=>`<tr><td class="wrap"><div class="title">${e(shorten(l.title||'未提供标题',65))}</div><div class="sub">${e(shorten(l.text,110))}</div></td><td><div>${e(l.region||'未识别地区')}</div><div class="sub">${e(l.platform||'公开来源')}</div><div class="sub">${e(l.source_type||'')}</div></td><td><div class="score">${number(l.score)}<span> / 100</span></div><div class="sub">${e(l.industry||'')}</div></td><td>${reviewTag(l.review_status)}<div class="sub">${statusTag(l.status)}</div></td><td><span class="tiny">${e(date(l.collected_at))}</span>${l.record_id?'<div class="sub">已同步飞书</div>':''}</td><td>${button('查看与审核','lead-detail',idAttrs(l.id),'small')}</td></tr>`).join('')}</tbody></table></div>`:empty('没有符合条件的真实线索','可调整筛选条件，或到采集任务执行一次采集。没有匹配需求的内容时，系统不会生成替代线索。')}</section>`;
+}
+function renderRegionStats() {
+  const rs=state.regionStats||{summary:{},cities:{},treemap:{}};
+  const s=rs.summary||{};
+  const cities=Object.entries(rs.cities||{}).filter(([,v])=>v.total>0).sort((a,b)=>b[1].total-a[1].total);
+  const total=s.total_leads||0;
+  const selected=state.selectedCity;
+  const selectedData=selected?rs.cities[selected]:null;
+  const districts=selectedData?Object.entries(selectedData.districts).filter(([,v])=>v.total>0).sort((a,b)=>b[1].total-a[1].total):[];
+  const exportUrl='/api/region-stats.csv?'+new URLSearchParams(state.filters);
+  return heading('四川省客资区域统计','按市州与区县聚合。主表为全省各市州总览，点击任意市州行查看右侧区县明细，下方树状图直观对比全省分布。',
+    `<a class="btn" href="${e(exportUrl)}">↓ 下载区域统计 CSV</a>`+button('刷新','refresh'))+
+    `<div class="metrics">${[
+      ['客资总数',total,'▦','四川省内已采集客资'],['高意向候选',s.high_intent||0,'↗','评分 80 分及以上'],
+      ['审核通过',s.approved||0,'✓','人工审核通过'],['覆盖市州',s.cities_with_leads||0,'◈','有客资的市州数']
+    ].map(([label,value,icon,note])=>`<div class="metric"><div class="metric-top">${label}<span class="metric-icon">${icon}</span></div><div class="metric-value">${number(value)}</div><p class="metric-note">${note}</p></div>`).join('')}</div>`+
+    `<div class="grid-2"><div><section class="panel"><div class="panel-head"><div><h2>一、四川省各市州总览（主表）</h2><p>点击行查看右侧区县明细</p></div></div>${cities.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>市州</th><th>客资数</th><th>高意向</th><th>审核通过</th><th>占比</th></tr></thead><tbody>${cities.map(([name,data])=>`<tr data-action="select-city" data-city="${e(name)}" style="cursor:pointer${selected===name?';background:#e8f3ed':''}"><td><strong>${e(name)}</strong></td><td>${number(data.total)}</td><td>${number(data.high_intent)}</td><td>${number(data.approved)}</td><td>${total?(data.total/total*100).toFixed(1):'0'}%</td></tr>`).join('')}</tbody></table></div>`:empty('暂无区域数据','执行采集任务后，这里会按市州展示客资分布。')}</section></div><div><section class="panel"><div class="panel-head"><div><h2>二、${e(selected||'区县明细')}（分表）</h2><p>${selected?selected+' 下各区县客资分布':'点击左侧市州查看区县分布'}</p></div></div>${districts.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>区县</th><th>客资数</th><th>高意向</th><th>审核通过</th></tr></thead><tbody>${districts.map(([name,data])=>`<tr><td>${e(name)}</td><td>${number(data.total)}</td><td>${number(data.high_intent)}</td><td>${number(data.approved)}</td></tr>`).join('')}</tbody></table></div>`:empty('暂无区县数据','该地市州暂无区县级客资，或点击左侧其他市州。')}</section></div></div>`+
+    `<section class="panel mt-20"><div class="panel-head"><div><h2>三、四川省客资分布树状图</h2><p>矩形面积代表客资数量，层级为 省 → 市州 → 区县</p></div></div><div class="panel-body"><div id="region-treemap" style="width:100%;height:500px;min-height:500px;display:block;"></div></div></section>`;
+}
+function initTreemap(){
+  const el=document.getElementById('region-treemap');
+  if(!el||typeof echarts==='undefined'||!state.regionStats)return;
+  el.style.cssText='width:100%;height:500px;min-height:500px;display:block;';
+  const chart=echarts.init(el);
+  chart.setOption({
+    tooltip:{formatter:p=>`${p.name}<br/>客资：${p.value||0} 条`},
+    series:[{type:'treemap',data:[state.regionStats.treemap],roam:false,nodeClick:false,
+      breadcrumb:{show:true},label:{show:true,formatter:'{b}'},
+      levels:[{itemStyle:{borderColor:'#fff',borderWidth:3,gapWidth:2}},
+              {itemStyle:{borderColor:'#fff',borderWidth:1,gapWidth:1}}]}]
+  });
+  setTimeout(()=>chart.resize(),120);
+  window.addEventListener('resize',()=>chart.resize());
 }
 function renderTasks() {
   return heading('采集任务','指定地区和需求词，在选定的许可来源中定时寻找匹配内容。电脑需保持服务运行。',button('＋ 新建任务','new-task','','primary'))+
@@ -247,6 +282,7 @@ async function handleAction(action,target) {
   if(action==='edit-source')return sourceForm(id);
   if(action==='lead-detail')return leadForm(id);
   if(action==='reset-filters'){state.filters={q:'',region:'',industry:'',min_score:'0',status:'',review_status:''};return loadPage('leads');}
+  if(action==='select-city'){state.selectedCity=target.dataset.city||'';return renderContent();}
   if(action==='run-task'){target.disabled=true;try{const result=await api(`/api/tasks/${encodeURIComponent(id)}/run`,'POST',{});toast(`已启动真实采集${result?.run_id?'，运行 #'+result.run_id:''}。可在运行日志查看结果。`);await loadPage(state.page,true);}finally{if(target.isConnected)target.disabled=false;}return;}
   if(action==='toggle-task'){const task=state.tasks.find(x=>String(x.id)===String(id));await api(`/api/tasks/${encodeURIComponent(id)}`,'PATCH',{enabled:!task.enabled});toast(task.enabled?'已暂停定时任务。':'已启用定时任务。');return loadPage('tasks',true);}
   if(action==='delete-source'){if(!confirm('删除此数据源？引用它的任务可能无法继续采集，请先核对相关任务。'))return;await api(`/api/sources/${encodeURIComponent(id)}`,'DELETE');toast('数据源已删除。');return loadPage('sources',true);}
